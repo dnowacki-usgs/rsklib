@@ -6,11 +6,12 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 
-def init_connection(rskfile):
-    conn = sqlite3.connect(rskfile)
-    return conn.cursor()
+
 
 def rsk_to_cdf(metadata):
+    """
+    Main function to load data from RSK file and save to raw .CDF
+    """
 
     print("Loading from sqlite; this may take a while for large datasets")
     RAW, metadata = rsk_to_xr(metadata)
@@ -22,7 +23,17 @@ def rsk_to_cdf(metadata):
 
     return RAW, metadata
 
+def init_connection(rskfile):
+    """Initialize an sqlite3 connection and return a cursor"""
+
+    conn = sqlite3.connect(rskfile)
+    return conn.cursor()
+
 def rsk_to_xr(metadata):
+    """
+    Load data from RSK file and generate an xarray Dataset
+    """
+
     rskfile = metadata['basefile'] + '.rsk'
     c = init_connection(rskfile)
 
@@ -58,20 +69,21 @@ def rsk_to_xr(metadata):
 
     times = pd.to_datetime(a['unixtime'][:,0], unit='ms')
     samples = np.arange(samplingcount)
-    jd = times.to_julian_date().values + 0.5
-    time = np.floor(jd)
-    time2 = (jd - time)*86400000
+    # jd = times.to_julian_date().values + 0.5
+    # time = np.floor(jd)
+    # time2 = (jd - time)*86400000
 
     dwave = {}
-    dwave['cf_time'] = xr.DataArray(times, dims=('time'), name='cf_time', attrs={'standard_name': 'time', 'axis': 'T'})
-    dwave['time2'] = xr.DataArray(time2.astype(int), dims=('time'), name='time2',
-        attrs={'units': 'msec since 0:00 GMT', 'type': 'EVEN', 'epic_code': 624 })
 
-    dwave['P_1'] = xr.DataArray(a['pres'], # coords=[times, samples],
+    dwave['P_1'] = xr.DataArray(a['pres'], coords=[times, samples],
         dims=('time', 'sample'), name='Pressure',
         attrs={'long_name': 'Pressure', '_FillValue': 1e35, 'units': 'dbar', 'epic_code': 1,
         'height_depth_units': 'm', 'initial_instrument_height': metadata['initial_instrument_height'],
         'serial_number': metadata['serial_number']})
+
+    dwave['time'] = xr.DataArray(times, dims=('time'), name='time')
+    # dwave['time2'] = xr.DataArray(time2.astype(int), dims=('time'), name='time2',
+    #     attrs={'units': 'msec since 0:00 GMT', 'type': 'EVEN', 'epic_code': 624 })
 
     dwave['sample'] = xr.DataArray(samples, dims=('sample'), name='sample')
     dwave['lat'] = xr.DataArray([metadata['latitude']], dims=('lat'), name='lat',
@@ -81,22 +93,31 @@ def rsk_to_xr(metadata):
     dwave['depth'] = xr.DataArray([metadata['WATER_DEPTH']], dims=('depth'), name='depth',
         attrs={'units': 'm', 'long_name': 'mean water depth', 'epic_code': 3})
 
-    # Assign min/max
+    # Create Dataset from dictionary of DataArrays
     RAW = xr.Dataset(dwave)
+
+    # need to add the time attrs after DataArrays have been combined into Dataset
+    RAW['time'].attrs.update({'standard_name': 'time', 'axis': 'T'})
+
     # need to assign this after it has become a Dataset, I think, to prevent errors. xarray wants to generate time by default, or something
-    RAW['time'] = xr.DataArray(time.astype(int), dims=('time'), name='time',
-        attrs={'units': 'True Julian Day', 'type': 'EVEN', 'epic_code': 624})
+    # RAW['time'] = xr.DataArray(time.astype(int), dims=('time'), name='time',
+    #     attrs={'units': 'True Julian Day', 'type': 'EVEN', 'epic_code': 624})
+
+    RAW = write_metadata(RAW, metadata)
 
     return RAW, metadata
 
 def xr_to_cdf(RAW, metadata):
-    """Write xarray to CDF format"""
+    """Write raw xarray Dataset to .cdf"""
 
     cdf_filename = metadata['filename'] + '-raw.cdf'
 
     RAW.to_netcdf(cdf_filename)
 
-def cdf_to_nc(metadata, offset=0):
+def cdf_to_nc(metadata, atmpres=None, offset=0):
+    """
+    Load raw .cdf file, trim, apply QAQC, and save to .nc
+    """
 
     cdf_filename = metadata['filename'] + '-raw.cdf'
 
@@ -104,11 +125,9 @@ def cdf_to_nc(metadata, offset=0):
 
     ds = xr.open_dataset(cdf_filename, autoclose=True)
 
-    # print('Saving attrs')
-    # attrs = {}
-    # for k in ds:
-    #     attrs[k] = ds[k].attrs
+    print(xr.decode_cf(ds))
 
+    # trim data via one of two methods
     if 'good_ens' in metadata:
         # we have good ensemble indices in the metadata
         print('Using good_ens')
@@ -135,46 +154,47 @@ def cdf_to_nc(metadata, offset=0):
         print('first burst in trimmed file:', ds['time'].min().values)
         print('last burst in trimmed file:', ds['time'].max().values)
 
-    print("Subtracting atmospheric offset")
-    # need to save attrs
-    attrs = ds['P_1'].attrs
-    ds['P_1'] = ds['P_1'] - offset
-    ds['P_1'].attrs = attrs
-    ds['P_1'].assign_attrs(minimum=ds['P_1'].min().values, maximum=ds['P_1'].max().values)
+
+
+    if atmpres is not None:
+        print("Atmospherically correcting data")
+
+        met = xr.open_dataset(atmpres, autoclose=True)
+        # need to save attrs before the subtraction, otherwise they are lost
+        # ds['P_1ac'] = ds['P_1'].copy(deep=True)
+        attrs = ds['P_1'].attrs
+        ds['P_1ac'] = ds['P_1'] - met['atmpres'] - met['atmpres'].offset
+        print('Correcting using offset of %f' % met['atmpres'].offset)
+        ds['P_1ac'].attrs = attrs
+
+    # assign min/max:
+    for k in ['P_1', 'P_1ac']:
+        if k in ds:
+            ds[k].attrs.update(minimum=ds[k].min().values, maximum=ds[k].max().values)
 
     print("Writing metadata to Dataset")
     ds = write_metadata(ds, metadata)
 
-    nc_filename = metadata['filename'] + '.nc'
-    print("Writing to " + nc_filename)
-    ds.to_netcdf(nc_filename)
+    # Write to .nc file
+    print("Writing cleaned/trimmed data to .nc file")
+    write_nc(ds, metadata)
 
     return ds
 
+def write_nc(ds, metadata):
+    """Write cleaned and trimmed Dataset to .nc file"""
+
+    nc_filename = metadata['filename'] + '.nc'
+
+    ds.to_netcdf(nc_filename)
+
 def write_metadata(ds, metadata):
+    """Write metadata to Dataset"""
 
     for k in metadata:
         ds.attrs.update({k: metadata[k]})
 
     return ds
-
-def compute_time(RAW):
-    """Compute Julian date and then time and time2 for use in NetCDF file"""
-
-    shape = np.shape(RAW['datetime'])
-
-    RAW['jd'] = pd.to_datetime(np.ravel(RAW['datetime'])).to_julian_date().values + 0.5
-    RAW['jd'] = np.reshape(RAW['jd'], shape)
-
-    RAW['time'] = np.floor(RAW['jd'])
-    # TODO: Hopefully this is correct... roundoff errors on big numbers...
-    RAW['time2'] = (RAW['jd'] - np.floor(RAW['jd']))*86400000
-
-    return RAW
-
-
-
-
 
         # # TODO: add the following??
         # # {'positive','down';
