@@ -16,7 +16,6 @@ def rsk_to_cdf(metadata):
     Main function to load data from RSK file and save to raw .CDF
     """
 
-    print("Loading from sqlite; this may take a while for large datasets")
     RAW, metadata = rsk_to_xr(metadata)
 
     print("Writing to raw netCDF")
@@ -38,6 +37,9 @@ def rsk_to_xr(metadata):
     """
 
     rskfile = metadata['basefile'] + '.rsk'
+
+    print('Loading from sqlite file %s; this may take a while for large datasets' % rskfile)
+
     c = init_connection(rskfile)
 
     c.execute("SELECT tstamp, channel01 FROM burstdata")
