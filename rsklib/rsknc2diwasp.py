@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 
 from __future__ import division, print_function
-
 import xarray as xr
 import sys
 sys.path.append('/Users/dnowacki/Documents/python')
+sys.path.append('/Users/dnowacki/Documents/rsklib')
 import matlabtools
+import rsklib
+
 
 def nc_to_diwasp(metadata, atmpres=None):
 
@@ -115,12 +117,12 @@ def ds_add_attrs(ds, metadata):
     """
 
     def add_attributes(var, metadata, INFO):
-            var.attrs.update({'serial_number': INFO['serial_number'],
-                'initial_instrument_height': metadata['initial_instrument_height'],
-                # 'nominal_instrument_depth': metadata['nominal_instrument_depth'], # FIXME
-                'height_depth_units': 'm',
-                'sensor_type': INFO['INST_TYPE'],
-                '_FillValue': 1e35})
+        var.attrs.update({'serial_number': INFO['serial_number'],
+            'initial_instrument_height': metadata['initial_instrument_height'],
+            # 'nominal_instrument_depth': metadata['nominal_instrument_depth'], # FIXME
+            'height_depth_units': 'm',
+            'sensor_type': INFO['INST_TYPE'],
+            '_FillValue': 1e35})
 
     ds['wp_peak'].attrs.update({'long_name': 'Dominant (peak) wave period',
         'units': 's',
@@ -143,7 +145,8 @@ def ds_add_attrs(ds, metadata):
 
     for var in ['wp_peak', 'wh_4061', 'wp_4060', 'pspec']:
         add_attributes(ds[var], metadata, ds.attrs)
-        ds[var].attrs.update({'minimum': ds[var].min().values, 'maximum': ds[var].max().values})
+        ds[var].attrs.update({'minimum': ds[var].min().values,
+            'maximum': ds[var].max().values})
 
     return ds
 
