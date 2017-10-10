@@ -10,12 +10,12 @@ Processing consists of three main steps:
 
 ## Raw binary to raw netCDF (.cdf)
 
-This step will generally be completed by using the import statement `from aqdlib import rskrsk2cdf` and calling `rskrsk2cdf.hdr_to_cdf()`, or by running `rskrsk2cdf.py` from the command line.
+This step will generally be completed by using the import statement `from rsklib import rskrsk2cdf` and calling `rskrsk2cdf.hdr_to_cdf()`, or by running `rskrsk2cdf.py` from the command line.
 
 ## Raw netCDF (.cdf) to EPIC-compliant and processed netCDF (.nc)
 
-This step will generally be completed by using the import statement `from aqdlib import rskcdf2nc` and calling `rskcdf2nc.cdf_to_nc()`, or by running `rskcdf2nc.py` from the command line. When calling `cdf_to_nc()`, the user may provide the path to a netCDF file consisting of atmospheric pressure, which will be used to atmospherically correct the pressure data. This path can also be passed as a command-line argument to `rskcdf2nc.py`.
+This step will generally be completed by using the import statement `from rsklib import rskcdf2nc` and calling `rskcdf2nc.cdf_to_nc()`, or by running `rskcdf2nc.py` from the command line. When calling `cdf_to_nc()`, the user may provide the path to a netCDF file consisting of atmospheric pressure, which will be used to atmospherically correct the pressure data. This path can also be passed as a command-line argument to `rskcdf2nc.py`.
 
 ## DIWASP processing and creation of EPIC-compliand wave statistics netCDF (.nc)
 
-This step will generally be completed by using the import statement `from aqdlib import rsknc2diwasp` and calling `rsknc2diwasp.nc_to_diwasp()`, or by running `rsknc2diwasp.py` from the command line. Note that DIWASP is a MATLAB package and must be run from MATLAB before using this module. A sample MATLAB run file for DIWASP is included in the `scripts` directory.
+This step will generally be completed by using the import statement `from rsklib import rsknc2diwasp` and calling `rsknc2diwasp.nc_to_diwasp()`, or by running `rsknc2diwasp.py` from the command line. Note that DIWASP is a MATLAB package and must be run from MATLAB before using this module. A sample MATLAB run file for DIWASP is included in the `scripts` directory.
