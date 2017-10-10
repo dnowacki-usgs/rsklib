@@ -41,10 +41,7 @@ def cdf_to_nc(metadata, atmpres=None, offset=0):
             # shouldn't they be?
             # reshape and add lon and lat dimensions
 
-    print("Writing metadata to Dataset")
     ds = rsklib.write_metadata(ds, metadata)
-
-    print(ds)
 
     # Write to .nc file
     print("Writing cleaned/trimmed data to .nc file")
@@ -67,7 +64,6 @@ def main():
     import yaml
 
     parser = argparse.ArgumentParser(description='Convert raw RBR d|wave .cdf format to processed .nc files')
-    parser.add_argument('cdfname', help='raw .CDF filename')
     parser.add_argument('gatts', help='path to global attributes file (gatts formatted)')
     parser.add_argument('config', help='path to ancillary config file (YAML formatted)')
     parser.add_argument('--atmpres', help='path to cdf file containing atmopsheric pressure data')
