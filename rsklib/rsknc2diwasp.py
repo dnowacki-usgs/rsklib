@@ -24,18 +24,90 @@ def nc_to_diwasp(metadata, atmpres=None):
 
     ds['pspec'] = xr.DataArray(mat['pspec'].T, dims=('time', 'frequency'))
 
-    # minimal QAQC
-    # only include data for when period is less than 20 s
-    # and wave height is greater than 0.02 m
-    ds = ds.where((ds['wp_peak'] < 20) & (ds['wp_4060'] < 20) & (ds['wh_4061'] > 0.02))
+    ds = trim_min_wp(ds, metadata)
+
+    ds = trim_min_wh(ds, metadata)
+
+    ds = trim_wp_ratio(ds, metadata)
 
     # Add attrs
     ds = ds_add_attrs(ds, metadata)
+
+    ds = rsklib.write_metadata(ds, metadata)
 
     # Write to netCDF
     ds.to_netcdf(metadata['filename'] + 's-a.nc', unlimited_dims='time')
 
     return ds
+
+
+def trim_min_wp(ds, metadata):
+    """
+    QA/QC
+    Trim wave data based on maximum wave period as specified in metadata
+    """
+
+    if 'maximum_wp' in metadata:
+        print('Trimming using maximum period of %f seconds'
+            % metadata['maximum_wp'])
+        ds = ds.where((ds['wp_peak'] < metadata['maximum_wp']) &
+            (ds['wp_4060'] < metadata['maximum_wp']))
+
+        for var in ['wp_peak', 'wp_4060', 'wh_4061', 'pspec']:
+            notetxt = 'Values filled where wp_peak, wp_4060 >= %f' % metadata['maximum_wp'] + '. '
+
+            if 'note' in ds[var].attrs:
+                ds[var].attrs['note'] = notetxt + ds[var].attrs['note']
+            else:
+                ds[var].attrs.update({'note': notetxt})
+
+    return ds
+
+
+def trim_min_wh(ds, metadata):
+    """
+    QA/QC
+    Trim wave data based on minimum wave height as specified in metadata
+    """
+
+    if 'minimum_wh' in metadata:
+        print('Trimming using minimum wave height of %f m'
+            % metadata['minimum_wh'])
+        ds = ds.where(ds['wh_4061'] > metadata['minimum_wh'])
+        print('done trimming waves')
+
+        for var in ['wp_peak', 'wp_4060', 'wh_4061', 'pspec']:
+            notetxt = 'Values filled where wh_4061 <= %f' % metadata['minimum_wh'] + '. '
+
+            if 'note' in ds[var].attrs:
+                ds[var].attrs['note'] = notetxt + ds[var].attrs['note']
+            else:
+                ds[var].attrs.update({'note': notetxt})
+
+    return ds
+
+
+def trim_wp_ratio(ds, metadata):
+    """
+    QA/QC
+    Trim wave data based on maximum ratio of wp_peak to wp_4060
+    """
+
+    if 'wp_ratio' in metadata:
+        print('Trimming using maximum ratio of wp_peak to wp_4060 of %f'
+            % metadata['wp_ratio'])
+        ds = ds.where(ds['wp_peak']/ds['wp_4060'] < metadata['wp_ratio'])
+
+        for var in ['wp_peak', 'wp_4060', 'wh_4061', 'pspec']:
+            notetxt = 'Values filled where wp_peak:wp_4060 >= %f' % metadata['wp_ratio'] + '. '
+
+            if 'note' in ds[var].attrs:
+                ds[var].attrs['note'] = notetxt + ds[var].attrs['note']
+            else:
+                ds[var].attrs.update({'note': notetxt})
+
+    return ds
+
 
 def ds_add_attrs(ds, metadata):
     """
@@ -52,18 +124,15 @@ def ds_add_attrs(ds, metadata):
 
     ds['wp_peak'].attrs.update({'long_name': 'Dominant (peak) wave period',
         'units': 's',
-        'epic_code': 4063,
-        'note': 'Values filled where wh_4061 < 0.02 m; wp_4060 >= 20 s; wp_peak >= 20 s'})
+        'epic_code': 4063})
 
     ds['wp_4060'].attrs.update({'long_name': 'Average wave period',
         'units': 's',
-        'epic_code': 4060,
-        'note': 'Values filled where wh_4061 < 0.02 m; wp_4060 >= 20 s; wp_peak >= 20 s'})
+        'epic_code': 4060})
 
     ds['wh_4061'].attrs.update({'long_name': 'Significant wave height',
         'units': 'm',
-        'epic_code': 4061,
-        'note': 'Values filled where wh_4061 < 0.02 m; wp_4060 >= 20 s; wp_peak >= 20 s'})
+        'epic_code': 4061})
 
     ds['pspec'].attrs.update({'long_name': 'Pressure derived non-directional wave energy spectrum',
         'units': 'm^2/Hz',
