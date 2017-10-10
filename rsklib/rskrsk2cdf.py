@@ -6,6 +6,10 @@ import sqlite3
 import numpy as np
 import xarray as xr
 import pandas as pd
+import netCDF4
+import inspect
+import platform
+import os
 
 def rsk_to_cdf(metadata):
     """
@@ -139,6 +143,12 @@ def write_metadata(ds, metadata):
 
     for k in metadata:
         ds.attrs.update({k: metadata[k]})
+
+    f = os.path.basename(inspect.stack()[1][1])
+
+    ds.attrs.update({'history': 'Processed using ' + f + ' with Python ' +
+        platform.python_version() + ', xarray ' + xr.__version__ + ', NumPy ' +
+        np.__version__ + ', netCDF4 ' + netCDF4.__version__})
 
     return ds
 
