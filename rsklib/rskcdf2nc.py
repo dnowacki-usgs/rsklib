@@ -2,14 +2,20 @@
 
 from __future__ import division, print_function
 
-import xarray as xr
+import warnings
 import sys
+import argparse
+import yaml
+import xarray as xr
+import numpy as np
 sys.path.insert(0, '/Users/dnowacki/Documents/rsklib')
-import rsklib
 sys.path.insert(0, '/Users/dnowacki/Documents/aqdlib')
+import rsklib
 import aqdlib
 
-def cdf_to_nc(metadata, atmpres=None, offset=0):
+
+
+def cdf_to_nc(metadata, atmpres=None):
     """
     Load raw .cdf file, trim, apply QAQC, and save to .nc
     """
@@ -41,7 +47,13 @@ def cdf_to_nc(metadata, atmpres=None, offset=0):
             # shouldn't they be?
             # reshape and add lon and lat dimensions
 
+    ds = compute_time(ds)
+
+    ds = ds_add_attrs(ds, metadata)
+
     ds = rsklib.write_metadata(ds, metadata)
+
+    ds = add_final_metadata(ds)
 
     # Write to .nc file
     print("Writing cleaned/trimmed data to .nc file")
@@ -49,19 +61,92 @@ def cdf_to_nc(metadata, atmpres=None, offset=0):
 
     return ds
 
+
+def compute_time(RAW):
+    """Compute Julian date and then time and time2 for use in netCDF file"""
+
+    # shift times to center of ensemble
+    timeshift = RAW.attrs['burst_interval']*RAW.attrs['sample_interval']/2
+
+    if timeshift.is_integer():
+        RAW['time'] = RAW['time'] + np.timedelta64(int(timeshift), 's')
+        print('Time shifted by:', int(timeshift), 's')
+    else:
+        warnings.warn('time NOT shifted because not a whole number of seconds: %f s ***' % timeshift)
+
+    RAW = create_epic_time(RAW)
+
+    return RAW
+
+def create_epic_time(RAW):
+
+    # create Julian date
+    RAW['jd'] = RAW['time'].to_dataframe().index.to_julian_date() + 0.5
+
+    RAW['epic_time'] = np.floor(RAW['jd'])
+    if np.all(np.mod(RAW['epic_time'], 1) == 0): # make sure they are all integers, and then cast as such
+        RAW['epic_time'] = RAW['epic_time'].astype(np.int32)
+    else:
+        warnings.warn('not all EPIC time values are integers; '\
+                      'this will cause problems with time and time2')
+
+    # TODO: Hopefully this is correct... roundoff errors on big numbers...
+    RAW['epic_time2'] = np.round((RAW['jd'] - np.floor(RAW['jd']))*86400000).astype(np.int32)
+
+    return RAW
+
 def write_nc(ds, metadata):
     """Write cleaned and trimmed Dataset to .nc file"""
 
     nc_filename = metadata['filename'] + 'b-cal.nc'
 
-    ds.to_netcdf(nc_filename)
+    ds.to_netcdf(nc_filename, engine='netcdf4')
+
+    # rename time variables after the fact to conform with EPIC/CMG standards
+    rsklib.rsknc2diwasp.rename_time(nc_filename)
+
+
+def add_final_metadata(ds):
+    """Add start_time and stop_time global attributes"""
+
+    ds.attrs.update({'start_time': ds['time'][0].values.astype(str),
+                     'stop_time': ds['time'][-1].values.astype(str)})
+
+    return ds
+
+def ds_add_attrs(ds, metadata):
+    # Update attributes for EPIC and STG compliance
+    ds.lat.encoding['_FillValue'] = False
+    ds.lon.encoding['_FillValue'] = False
+    ds.depth.encoding['_FillValue'] = False
+    ds.time.encoding['_FillValue'] = False
+    ds.epic_time.encoding['_FillValue'] = False
+    ds.epic_time2.encoding['_FillValue'] = False
+    ds.sample.encoding['_FillValue'] = False
+
+    ds['time'].attrs.update({'standard_name': 'time',
+                             'axis': 'T'})
+
+    ds['epic_time'].attrs.update({'units': 'True Julian Day',
+                                  'type': 'EVEN',
+                                  'epic_code': 624})
+
+    ds['epic_time2'].attrs.update({'units': 'msec since 0:00 GMT',
+                                   'type': 'EVEN',
+                                   'epic_code': 624})
+
+    if 'P_1ac' in ds:
+        ds['P_1ac'].attrs.update({'units': 'dbar',
+                                  'name': 'Pac',
+                                  'long_name': 'Corrected pressure',
+                                  '_FillValue': 1e35})
+        if 'P_1ac_note' in metadata:
+            ds['P_1ac'].attrs.update({'note': metadata['P_1ac_note']})
+
+    return ds
+
 
 def main():
-    import sys
-    sys.path.insert(0, '/Users/dnowacki/Documents/rsklib')
-    import rsklib
-    import argparse
-    import yaml
 
     parser = argparse.ArgumentParser(description='Convert raw RBR d|wave .cdf format to processed .nc files')
     parser.add_argument('gatts', help='path to global attributes file (gatts formatted)')
@@ -80,10 +165,11 @@ def main():
         metadata[k] = config[k]
 
     if args.atmpres:
-        # press_ac = aqdlib.load_press_ac('press_ac.cdf', ['p_1ac'])
         ds = rsklib.cdf_to_nc(metadata, atmpres=args.atmpres)
     else:
         ds = rsklib.cdf_to_nc(metadata)
+
+    return ds
 
 if __name__ == '__main__':
     main()

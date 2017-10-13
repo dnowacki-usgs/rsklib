@@ -3,13 +3,14 @@
 from __future__ import division, print_function
 
 import sqlite3
+import inspect
+import platform
+import os
 import numpy as np
 import xarray as xr
 import pandas as pd
 import netCDF4
-import inspect
-import platform
-import os
+
 
 def rsk_to_cdf(metadata):
     """
@@ -40,22 +41,22 @@ def rsk_to_xr(metadata):
 
     print('Loading from sqlite file %s; this may take a while for large datasets' % rskfile)
 
-    c = init_connection(rskfile)
+    conn = init_connection(rskfile)
 
-    c.execute("SELECT tstamp, channel01 FROM burstdata")
-    data = c.fetchall()
+    conn.execute("SELECT tstamp, channel01 FROM burstdata")
+    data = conn.fetchall()
     print("Done fetching data")
     d = np.asarray(data)
     # Get samples per burst
-    samplingcount = c.execute("select samplingcount from schedules").fetchall()[0][0]
+    samplingcount = conn.execute("select samplingcount from schedules").fetchall()[0][0]
 
     metadata['samples_per_burst'] = samplingcount
-    samplingperiod = c.execute("select samplingperiod from schedules").fetchall()[0][0]
+    samplingperiod = conn.execute("select samplingperiod from schedules").fetchall()[0][0]
     metadata['sample_interval'] = samplingperiod / 1000
-    repetitionperiod = c.execute("select repetitionperiod from schedules").fetchall()[0][0]
+    repetitionperiod = conn.execute("select repetitionperiod from schedules").fetchall()[0][0]
     metadata['burst_interval'] = repetitionperiod / 1000
     metadata['burst_length'] = metadata['samples_per_burst'] * metadata['sample_interval']
-    metadata['serial_number'] = c.execute("select serialID from instruments").fetchall()[0][0]
+    metadata['serial_number'] = conn.execute("select serialID from instruments").fetchall()[0][0]
     metadata['INST_TYPE'] = 'RBR Virtuoso d|wave'
 
     a = {}
@@ -76,52 +77,38 @@ def rsk_to_xr(metadata):
     times = pd.to_datetime(a['unixtime'][:,0], unit='ms')
     samples = np.arange(samplingcount)
 
-    jd = times.to_julian_date().values + 0.5
-    time = np.floor(jd)
-    time2 = (jd - time)*86400000
-
     dwave = {}
 
     dwave['P_1'] = xr.DataArray(a['pres'], coords=[times, samples],
         dims=('time', 'sample'), name='Pressure',
         attrs={'long_name': 'Pressure',
-            '_FillValue': 1e35,
-            'units': 'dbar',
-            'epic_code': 1,
-            'height_depth_units': 'm',
-            'initial_instrument_height': metadata['initial_instrument_height'],
-            'serial_number': metadata['serial_number']})
+               '_FillValue': 1e35,
+               'units': 'dbar',
+               'epic_code': 1,
+               'height_depth_units': 'm',
+               'initial_instrument_height': metadata['initial_instrument_height'],
+               'serial_number': metadata['serial_number']})
 
     dwave['time'] = xr.DataArray(times, dims=('time'), name='time')
-
-    # dwave['epic_time'] = xr.DataArray(time.astype(np.int32), dims=('time'), name='epic_time',
-    #     attrs={'units': 'True Julian Day',
-    #     'type': 'EVEN',
-    #     'epic_code': 624,
-    #     '_FillValue': False})
-    #
-    # dwave['epic_time2'] = xr.DataArray(time2.astype(np.int32), dims=('time'), name='epic_time2',
-    #     attrs={'units': 'msec since 0:00 GMT',
-    #     'type': 'EVEN',
-    #     'epic_code': 624,
-    #     '_FillValue': False})
 
     dwave['sample'] = xr.DataArray(samples, dims=('sample'), name='sample')
 
     dwave['lat'] = xr.DataArray([metadata['latitude']], dims=('lat'), name='lat',
-        attrs={'units': 'degrees_north',
-        'long_name': 'Latitude',
-        'epic_code': 500})
+        attrs={'units': 'degree_north',
+               'long_name': 'Latitude',
+               'epic_code': 500})
 
     dwave['lon'] = xr.DataArray([metadata['longitude']], dims=('lon'), name='lon',
-        attrs={'units': 'degrees_east',
-        'long_name': 'Longitude',
-        'epic_code': 502})
+        attrs={'units': 'degree_east',
+               'long_name': 'Longitude',
+               'epic_code': 502})
 
     dwave['depth'] = xr.DataArray([metadata['WATER_DEPTH']], dims=('depth'), name='depth',
         attrs={'units': 'm',
-        'long_name': 'mean water depth',
-        'epic_code': 3})
+               'long_name': 'mean water depth',
+               'axis': 'z', # TODO: are these attrs necessary/appropriate?
+               'positive': 'down', # TODO: are these attrs necessary/appropriate?
+               'epic_code': 3})
 
     # Create Dataset from dictionary of DataArrays
     RAW = xr.Dataset(dwave)
@@ -192,6 +179,8 @@ def main():
         metadata[k] = config[k]
 
     RAW, metadata = rsklib.rsk_to_cdf(metadata)
+
+    return RAW, metadata
 
 if __name__ == '__main__':
     main()
