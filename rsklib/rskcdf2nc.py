@@ -57,8 +57,7 @@ def cdf_to_nc(metadata, atmpres=None):
 
     # Write to .nc file
     print("Writing cleaned/trimmed data to .nc file")
-    write_nc(ds, metadata)
-
+    write_nc(ds, metadata, 'b-cal.nc')
     return ds
 
 
@@ -95,15 +94,20 @@ def create_epic_time(RAW):
 
     return RAW
 
-def write_nc(ds, metadata):
+def write_nc(ds, metadata, ext):
     """Write cleaned and trimmed Dataset to .nc file"""
 
-    nc_filename = metadata['filename'] + 'b-cal.nc'
+    nc_filename = metadata['filename'] + ext
 
+    # new version of xarray seems to support renaming time in this manner
+    ds.rename({'time': 'time_cf',
+               'epic_time': 'time',
+               'epic_time2': 'time2'},
+               inplace=True)
+    ds.swap_dims({'time_cf': 'time'}, inplace=True)
+
+    # TODO: unlimited_dims='time' doesn't seem to work
     ds.to_netcdf(nc_filename, engine='netcdf4')
-
-    # rename time variables after the fact to conform with EPIC/CMG standards
-    rsklib.rsknc2diwasp.rename_time(nc_filename)
 
 
 def add_final_metadata(ds):

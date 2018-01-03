@@ -41,20 +41,9 @@ def nc_to_diwasp(metadata):
 
     ds = rsklib.write_metadata(ds, metadata)
 
-    write_nc(ds, metadata)
+    rsklib.rskcdf2nc.write_nc(ds, metadata, 's-a.nc')
 
     return ds
-
-
-def write_nc(ds, metadata):
-    """Write cleaned and trimmed Dataset to .nc file"""
-
-    nc_filename = metadata['filename'] + 's-a.nc'
-
-    ds.to_netcdf(nc_filename, unlimited_dims='time', engine='netcdf4')
-
-    # rename time variables after the fact to conform with EPIC/CMG standards
-    rename_time(nc_filename)
 
 
 def create_water_depth(VEL, metadata):
@@ -155,26 +144,6 @@ def trim_wp_ratio(ds, metadata):
                 ds[var].attrs.update({'note': notetxt})
 
     return ds
-
-
-def rename_time(nc_filename):
-    """
-    Rename time variables. Need to use netCDF4 module since xarray seems to have
-    issues with the naming of time variables/dimensions
-    """
-
-    nc = netCDF4.Dataset(nc_filename, 'r+')
-    timebak = nc['epic_time'][:]
-    nc.renameVariable('time', 'time_cf')
-    nc.renameVariable('epic_time', 'time')
-    nc.renameVariable('epic_time2', 'time2')
-    nc.close()
-
-    # need to do this in two steps after renaming the variable
-    # not sure why, but it works this way
-    nc = netCDF4.Dataset(nc_filename, 'r+')
-    nc['time'][:] = timebak
-    nc.close()
 
 
 def ds_add_attrs(ds, metadata):

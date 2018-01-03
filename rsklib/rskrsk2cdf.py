@@ -178,9 +178,9 @@ def main():
     for k in config:
         metadata[k] = config[k]
 
-    RAW, metadata = rsklib.rsk_to_cdf(metadata)
+    ds = rsklib.rsk_to_cdf(metadata)
 
-    return RAW, metadata
+    return ds
 
 if __name__ == '__main__':
     main()
